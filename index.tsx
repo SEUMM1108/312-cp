@@ -1,24 +1,32 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createRoot } from "react-dom/client";
+
 import OpenAI from "openai";
 
-// Initialize Qwen API (via Alibaba DashScope)
+// 初始化通义千问客户端
 const client = new OpenAI({
-    apiKey: process.env.DASHSCOPE_API_KEY, // 记得去Vercel后台把变量名改成这个，或者改代码里的名字
-    baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", // 阿里云的专属地址
-    dangerouslyAllowBrowser: true // 允许在浏览器前端直接运行
+    apiKey: process.env.DASHSCOPE_API_KEY,
+    baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    dangerouslyAllowBrowser: true
 });
 
+// Refined Styles for "Shipping" (CP Culture)
 const STYLES = [
   "甜宠 (Sweet/Fluff)",
-  "虐心 (Angst)",
-  "搞笑 (Comedy)",
-  "相爱相杀 (Enemies to Lovers)",
-  "暗恋 (Unrequited Love)",
-  "日常 (Slice of Life)",
-  "职场/学术 (Academic/Workplace)",
+  "极限拉扯 (Tension)",
+  "双向暗恋 (Mutual Crush)",
+  "相爱相杀 (Rivals to Lovers)",
+  "修罗场 (Jealousy/Drama)",
   "破镜重圆 (Reunion)",
+  "强强 (Power Couple)",
+  "救赎 (Hurt/Comfort)",
+  "年下/年上 (Age Gap)",
+  "沙雕/搞笑 (Crack/Comedy)",
+  "通宵赶图 (Late Night Lab)",
+  "BE美学 (Tragedy)"
 ];
+
+const WORD_COUNTS = [300, 500, 700, 1000];
 
 const CHARACTER_GROUPS = [
   {
@@ -47,91 +55,134 @@ const CHARACTER_GROUPS = [
   }
 ];
 
+// Helper to get all predefined names
+const ALL_PREDEFINED_CHARS = CHARACTER_GROUPS.flatMap(g => g.members);
+
+type CharacterInput = {
+  id: string;
+  name: string;
+  isCustom: boolean;
+};
+
 const App = () => {
-  const [personA, setPersonA] = useState("");
-  const [personB, setPersonB] = useState("");
+  // State for characters (dynamic list)
+  const [characters, setCharacters] = useState<CharacterInput[]>([
+    { id: '1', name: "", isCustom: false },
+    { id: '2', name: "", isCustom: false }
+  ]);
+  
   const [selectedStyle, setSelectedStyle] = useState(STYLES[0]);
+  const [targetWordCount, setTargetWordCount] = useState(500);
   const [setting, setSetting] = useState("");
   const [story, setStory] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("复制 (Copy)");
   const outputRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom as story generates
+  // Auto-scroll
   useEffect(() => {
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
   }, [story]);
 
+  // Character management handlers
+  const updateCharacter = (id: string, field: keyof CharacterInput, value: any) => {
+    setCharacters(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c));
+  };
+
+  const addCharacter = () => {
+    if (characters.length >= 5) {
+      alert("最多支持 5 人同台飙戏 (Max 5 characters)");
+      return;
+    }
+    setCharacters(prev => [...prev, { id: Date.now().toString(), name: "", isCustom: false }]);
+  };
+
+  const removeCharacter = (id: string) => {
+    if (characters.length <= 2) return;
+    setCharacters(prev => prev.filter(c => c.id !== id));
+  };
+
+  const handleRandomize = () => {
+    // Pick 2 random unique characters from the predefined list
+    const shuffled = [...ALL_PREDEFINED_CHARS].sort(() => 0.5 - Math.random());
+    const randomChars = shuffled.slice(0, 2);
+    
+    // Pick random style
+    const randomStyle = STYLES[Math.floor(Math.random() * STYLES.length)];
+
+    setCharacters([
+      { id: Date.now().toString() + '1', name: randomChars[0], isCustom: false },
+      { id: Date.now().toString() + '2', name: randomChars[1], isCustom: false }
+    ]);
+    setSelectedStyle(randomStyle);
+  };
+
   const generateStory = async () => {
-    if (!personA || !personB) {
-      alert("请从列表中选择两个角色 / Please select both characters from the list.");
+    // Filter out empty names
+    const activeCharacters = characters.filter(c => c.name.trim() !== "");
+
+    if (activeCharacters.length < 2) {
+      alert("至少需要两个角色才能产粮 / At least 2 characters required.");
       return;
     }
 
     setIsGenerating(true);
-    setStory(""); // Clear previous story
+    setStory(""); 
+    setCopyStatus("复制 (Copy)"); 
 
     try {
-      const systemInstruction = `你是一位擅长描写校园科研生活、捕捉人物情感张力的同人小说家。
+      const charListString = activeCharacters.map((c, idx) => `【人物 ${idx + 1}】：${c.name}`).join("\n");
+
+      const systemInstruction = `你是一位擅长捕捉人物情感张力、描写细腻互动的同人文写手（嗑学家）。
 你正在创作一系列发生在【东南大学机械学院工业设计系】课题组的故事。
 
 **核心场景 (The Stage):**
-- **地点：** 东南大学 南高312室（这是大本营，几乎所有师生的工位都在这里）。
-- **环境氛围：** 工科特有的氛围。桌上不仅有电脑、论文，还有各种设备。
-- **专业特色：** 这是一个设计与工程的交叉学科，领域包括：计算机，人机交互，航空航天。
+- **地点：** 东南大学 南高312室（大本营）、实验室、校园周边。
+- **环境氛围：** 充满生活气息的工科科研日常。半夜的泡面、改不完的论文、跑不通的代码、打印机的噪音。
+- **专业特色：** 工业设计，涉及计算机、人机交互、美学。
 
 **人物资料库 (Character Database):**
-请严格记住以下人物的阶级和关系，用于构建故事中的互动模式：
+请严格记住以下人物的阶级和关系 (若用户输入了自定义角色，请根据名字气质将其自然融入群体)：
 
-【BOSS 组】
-1. **周小舟 (大导师/女/40+):** 性格：学术造诣高，严厉但有社交手腕，偶尔活泼。气场：掌握生杀大权，学生有点怕她，但又很敬佩她。
-2. **余潇群 (小导师/男/30+):** 性格：和蔼可亲，耐心极好，技术/学术双强。功能：通常是学生们的“救命稻草”，负责解决具体难题，和学生关系更近。
+${JSON.stringify(CHARACTER_GROUPS)}
 
-【博士组 (老资历/压力大/大师兄姐)】
-- 韩己臣 (男)、朱隽宇 (男)、王柏捷 (男)、巫明蓉 (女)、李翰林 (男)。
-- *定位：* 实验室的中流砥柱，可能在带硕士，或者被毕业论文折磨。
+**写作核心要求 (Writing Guidelines):**
+1.  **重“嗑”感，轻剧情：** 重点在于人物之间的**眼神交流、肢体接触、心理博弈、氛围拉扯**。不要写流水账，要写出那种“虽然他们没说，但由于都知道他们是一对”的暧昧感，或者“大家都看出来了就他俩不知道”的急切感。
+2.  **人设还原：**
+    *   **Boss组：** 气场强大，或者是温和的掌控者。
+    *   **博士组：** 疲惫但可靠，学术压力大，可能带有那种“成熟大哥哥/大姐姐”的苏感。
+    *   **硕士/本科：** 充满活力或清澈的愚蠢，被论文折磨的小狗感。
+3.  **风格执行：** 严格执行【${selectedStyle}】。
+    *   *极限拉扯：* 两人之间充满试探，进一退二。
+    *   *修罗场：* 多人互动时，微妙的嫉妒、占有欲和站队。
+    *   *强强：* 学术或能力上的势均力敌，互相欣赏又互不服输。
+    *   *救赎：* 在科研压力崩溃时，唯一的那个避风港。
+4.  **篇幅控制：** 目标字数在 **${targetWordCount}** 字左右。
+5.  **拒绝OOC（Out Of Character）：** 保持符合东南大学工科生的行为逻辑，不要写成霸道总裁文。
 
-【硕士·研三 (老油条/面临毕业/忙碌)】
-- 蒋厚泽 (男)、陈诚 (男)、马一松 (男)、何雅怡 (女)、吴航 (女)、章雨昕 (女)。
-
-【硕士·研二 (干活主力/最活跃)】
-- 陈玲 (女)、黎若渝 (女)、马濛 (男)、吴佳庆 (男)、王志轩 (男)。
-
-【硕士·研一 (萌新/打杂/充满希望或迷茫)】
-- 郝宇森 (男)、陈嘉怡 (女)、虞逸凡 (女)、徐瑜增 (男)。
-
-【本科 (团宠/甚至可能比研究生还强)】
-- 巴程涛。
-
-**写作规则 (Writing Rules):**
-1. **阶级互动：** 研一通常对博士叫“师兄/师姐”，对导师毕恭毕敬。研三和博士之间可能更像战友。
-2. **场景感：** 描写可以发生在“南高312”这个空间内，也可以自由发挥在任何占学术边的环境。
-3. **CP感生成逻辑：** 
-   - 当用户指定两个人名时，根据他们的身份（如：博士x研一，导师x学生，同年级x同年级）自动生成符合身份差距的张力。
-   - 如果用户未指定具体性格（除了导师外），请根据常见的工科研究生人设进行合理脑补（如：熬夜秃头、吐槽狂魔、高冷学霸、笨蛋美人）。
-4. **必须符合用户指定的文风（如：甜宠、虐心、搞笑）。**
-5. **长度控制在 500 字左右。**
-6. **不要输出多余的寒暄，直接输出小说正文。**`;
+**直接输出小说正文，无需标题和寒暄。**`;
 
       const userPrompt = `
-【人物A】：${personA}
-【人物B】：${personB}
+${charListString}
 【文风】：${selectedStyle}
-【设定/背景】：${setting || "自由发挥，但要基于南高312的科研生活日常"}
+【目标字数】：${targetWordCount}字
+【设定/梗/Context】：${setting || "自由发挥，基于南高312日常的嗑糖瞬间"}
 `;
-      // 1. 发起请求
+
+// 3. 调用通义千问 API (这是和原来最大的不同点)
       const stream = await client.chat.completions.create({
-        model: "qwen-plus", // 模型名称：qwen-plus (性价比高) 或 qwen-max (效果最好)
+        model: "qwen-plus", // 使用通义千问 Plus 模型
         messages: [
-          { role: "system", content: systemInstruction }, // 把之前的 systemInstruction 放这里
-          { role: "user", content: userPrompt }           // 把用户的输入放这里
+          { role: "system", content: systemInstruction },
+          { role: "user", content: userPrompt }
         ],
-        stream: true,     // 开启打字机流式效果
-        temperature: 0.85 // 创意程度
+        stream: true, // 开启流式输出
+        temperature: 0.95, // 保持高创造性
       });
 
-      // 2. 处理流式返回 (格式和Google不一样，所以要改)
+      // 4. 处理流式返回结果
       for await (const chunk of stream) {
         const content = chunk.choices[0]?.delta?.content || "";
         if (content) {
@@ -146,28 +197,57 @@ const App = () => {
     }
   };
 
+  const handleCopy = async () => {
+    if (!story) return;
+    try {
+      await navigator.clipboard.writeText(story);
+      setCopyStatus("已复制！(Copied)");
+      setTimeout(() => setCopyStatus("复制 (Copy)"), 2000);
+    } catch (err) {
+      console.error("Failed to copy", err);
+    }
+  };
+
+  const handleShare = async () => {
+    if (!story) return;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: '南高312 CP文',
+          text: story,
+        });
+      } catch (err) {
+        console.log('Error sharing', err);
+      }
+    } else {
+      handleCopy();
+      alert("您的浏览器不支持直接分享，已自动复制到剪贴板。");
+    }
+  };
+
   return (
     <div className="app-container">
       <style>{`
         .app-container {
-          max-width: 900px;
+          max-width: 800px;
           margin: 0 auto;
-          padding: 40px 20px;
+          padding: 20px;
           display: flex;
           flex-direction: column;
-          gap: 30px;
+          gap: 25px;
+          min-height: 100vh;
         }
 
         .header {
           text-align: center;
-          margin-bottom: 20px;
+          margin-bottom: 5px;
         }
 
         .header h1 {
           font-family: 'Noto Serif SC', serif;
           font-weight: 700;
           color: #2d3748;
-          font-size: 2.2rem;
+          font-size: 2rem;
           margin: 0;
           background: linear-gradient(to right, #0052d4, #4364f7, #6fb1fc);
           -webkit-background-clip: text;
@@ -176,54 +256,71 @@ const App = () => {
 
         .header p {
           color: #718096;
-          margin-top: 10px;
-          font-size: 1.1rem;
-        }
-
-        .sub-header {
-            font-size: 0.9rem;
-            color: #a0aec0;
-            margin-top: 5px;
+          margin-top: 8px;
+          font-size: 1rem;
+          font-weight: 600;
         }
 
         .input-card {
-          background: rgba(255, 255, 255, 0.8);
-          backdrop-filter: blur(10px);
-          border-radius: 20px;
-          padding: 30px;
+          background: rgba(255, 255, 255, 0.9);
+          backdrop-filter: blur(12px);
+          border-radius: 16px;
+          padding: 24px;
           box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-          border: 1px solid rgba(255, 255, 255, 0.5);
+          border: 1px solid rgba(255, 255, 255, 0.6);
         }
 
-        .row {
-          display: flex;
-          gap: 20px;
-          margin-bottom: 20px;
-        }
-        
-        .col {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-        }
-
-        label {
-          font-size: 0.9rem;
-          font-weight: 600;
+        .section-label {
+          font-size: 0.85rem;
+          font-weight: 700;
           color: #4a5568;
           margin-bottom: 8px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
         }
 
-        /* Replaced text input styles with select styles */
-        select, textarea {
-          padding: 12px 16px;
-          border-radius: 12px;
+        /* Character Rows */
+        .char-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          margin-bottom: 20px;
+        }
+
+        .char-row {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-5px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .char-input-group {
+          flex: 1;
+          display: flex;
+          gap: 8px;
+        }
+
+        select, input[type="text"], textarea {
+          padding: 10px 14px;
+          border-radius: 10px;
           border: 2px solid #e2e8f0;
           background: #fff;
-          font-size: 1rem;
+          font-size: 0.95rem;
           transition: border-color 0.2s, box-shadow 0.2s;
           font-family: 'Nunito', sans-serif;
           width: 100%;
+          box-sizing: border-box;
+        }
+        
+        select {
           appearance: none;
           background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23007CB2%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
           background-repeat: no-repeat;
@@ -231,29 +328,81 @@ const App = () => {
           background-size: .65em auto;
         }
 
-        select:focus, textarea:focus {
+        select:focus, input:focus, textarea:focus {
           outline: none;
           border-color: #4364f7;
           box-shadow: 0 0 0 3px rgba(67, 100, 247, 0.1);
         }
 
+        .icon-btn {
+          background: none;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          width: 40px;
+          height: 42px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          font-size: 1.1rem;
+          color: #718096;
+          transition: all 0.2s;
+          flex-shrink: 0;
+        }
+
+        .icon-btn:hover {
+          background: #edf2f7;
+          color: #4a5568;
+        }
+
+        .icon-btn.active {
+          background: #ebf4ff;
+          color: #4364f7;
+          border-color: #4364f7;
+        }
+        
+        .char-actions {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 20px;
+        }
+        
+        .text-btn {
+          background: none;
+          border: none;
+          color: #4364f7;
+          font-weight: 700;
+          font-size: 0.9rem;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          padding: 5px 10px;
+          border-radius: 6px;
+        }
+        
+        .text-btn:hover {
+          background: #ebf4ff;
+        }
+
         .style-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-          gap: 10px;
+          grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+          gap: 8px;
           margin-bottom: 20px;
         }
 
         .style-tag {
-          padding: 8px 12px;
+          padding: 8px 4px;
           border-radius: 8px;
           background: #edf2f7;
           color: #4a5568;
-          font-size: 0.9rem;
+          font-size: 0.85rem;
           cursor: pointer;
           text-align: center;
           transition: all 0.2s;
           border: 1px solid transparent;
+          user-select: none;
         }
 
         .style-tag:hover {
@@ -264,12 +413,40 @@ const App = () => {
           background: #ebf4ff;
           color: #4364f7;
           border-color: #4364f7;
-          font-weight: 600;
+          font-weight: 700;
+          box-shadow: 0 2px 4px rgba(67, 100, 247, 0.1);
+        }
+        
+        /* Word Count Selector */
+        .length-selector {
+          display: flex;
+          background: #edf2f7;
+          border-radius: 10px;
+          padding: 4px;
+          margin-bottom: 20px;
+        }
+        
+        .length-option {
+          flex: 1;
+          text-align: center;
+          padding: 8px;
+          border-radius: 8px;
+          font-size: 0.85rem;
+          cursor: pointer;
+          color: #718096;
+          transition: all 0.2s;
+        }
+        
+        .length-option.selected {
+          background: white;
+          color: #2d3748;
+          font-weight: 700;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
 
         .generate-btn {
           width: 100%;
-          padding: 16px;
+          padding: 14px;
           border: none;
           border-radius: 12px;
           background: linear-gradient(135deg, #0052d4 0%, #4364f7 100%);
@@ -279,15 +456,15 @@ const App = () => {
           cursor: pointer;
           transition: transform 0.1s, box-shadow 0.2s;
           box-shadow: 0 4px 6px -1px rgba(67, 100, 247, 0.3);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
         }
 
         .generate-btn:hover {
           transform: translateY(-2px);
           box-shadow: 0 6px 10px -1px rgba(67, 100, 247, 0.4);
-        }
-
-        .generate-btn:active {
-          transform: translateY(0);
         }
 
         .generate-btn:disabled {
@@ -297,12 +474,15 @@ const App = () => {
         }
 
         .output-section {
-          position: relative;
-          background: #fff;
-          border-radius: 4px;
-          box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-          min-height: 300px;
-          margin-top: 20px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          animation: slideUp 0.3s ease-out;
+        }
+        
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
         }
 
         /* Paper effect */
@@ -312,23 +492,27 @@ const App = () => {
             linear-gradient(90deg, #f1f1f1 1px, transparent 1px);
           background-size: 20px 20px;
           background-color: #fffdf5; /* Cream paper color */
-          padding: 40px;
-          border-radius: 2px;
-          min-height: 400px;
+          padding: 30px 20px;
+          border-radius: 8px;
+          min-height: 350px;
+          max-height: 60vh;
+          overflow-y: auto;
           position: relative;
+          box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+          border: 1px solid #e2e8f0;
         }
 
         .output-paper::before {
           content: '';
           position: absolute;
-          top: 0; left: 40px; bottom: 0;
+          top: 0; left: 30px; bottom: 0;
           width: 2px;
-          background: rgba(255,0,0,0.1); /* Margin line */
+          background: rgba(255,0,0,0.05); /* Margin line */
         }
 
         .story-content {
           font-family: 'Noto Serif SC', serif;
-          font-size: 1.15rem;
+          font-size: 1.1rem;
           line-height: 1.8;
           color: #2d3748;
           white-space: pre-wrap;
@@ -338,58 +522,129 @@ const App = () => {
         .placeholder {
           text-align: center;
           color: #a0aec0;
-          margin-top: 100px;
+          margin-top: 80px;
           font-style: italic;
+          padding-left: 0;
+        }
+
+        .toolbar {
+          display: flex;
+          gap: 10px;
+          justify-content: flex-end;
+        }
+
+        .tool-btn {
+          padding: 8px 16px;
+          border-radius: 8px;
+          border: 1px solid #e2e8f0;
+          background: white;
+          color: #4a5568;
+          font-size: 0.9rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+        }
+        
+        .tool-btn.primary {
+          color: #4364f7;
+          border-color: #4364f7;
+        }
+
+        .footer {
+          text-align: center;
+          color: #a0aec0;
+          font-size: 0.8rem;
+          margin-top: auto;
+          padding-top: 20px;
         }
 
         @media (max-width: 600px) {
-          .row { flex-direction: column; gap: 10px;}
+          .app-container { padding: 15px; }
+          .header h1 { font-size: 1.6rem; }
+          .style-grid { grid-template-columns: repeat(3, 1fr); }
+          .output-paper { padding: 20px 15px; }
+          .output-paper::before { left: 20px; }
+          .story-content { font-size: 1rem; padding-left: 15px; }
         }
       `}</style>
 
       <div className="header">
         <h1>南高312 嗑学家</h1>
-        <p>东南大学机械学院·工业设计系课题组</p>
-        <div className="sub-header">Input two characters from the lab, and let AI write their story.</div>
+        <p>东南大学机械学院 · 工业设计系课题组</p>
       </div>
 
       <div className="input-card">
-        <div className="row">
-          <div className="col">
-            <label>人物 A (Character A)</label>
-            <select
-              value={personA}
-              onChange={(e) => setPersonA(e.target.value)}
-            >
-              <option value="">请选择角色...</option>
-              {CHARACTER_GROUPS.map((group) => (
-                <optgroup key={group.group} label={group.group}>
-                  {group.members.map((member) => (
-                    <option key={member} value={member}>{member}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
-          <div className="col">
-            <label>人物 B (Character B)</label>
-            <select
-              value={personB}
-              onChange={(e) => setPersonB(e.target.value)}
-            >
-              <option value="">请选择角色...</option>
-              {CHARACTER_GROUPS.map((group) => (
-                <optgroup key={group.group} label={group.group}>
-                  {group.members.map((member) => (
-                    <option key={member} value={member}>{member}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
+        <div className="section-label">
+          <span>角色列表 (Characters)</span>
+          <span style={{fontSize: '0.75rem', fontWeight: 400, color: '#a0aec0'}}>
+            {characters.length} / 5
+          </span>
+        </div>
+        
+        <div className="char-list">
+          {characters.map((char, index) => (
+            <div key={char.id} className="char-row">
+              <div className="char-input-group">
+                {char.isCustom ? (
+                   <input
+                     type="text"
+                     value={char.name}
+                     onChange={(e) => updateCharacter(char.id, 'name', e.target.value)}
+                     placeholder={`输入自定义角色名 ${index + 1}...`}
+                     autoFocus
+                   />
+                ) : (
+                  <select
+                    value={char.name}
+                    onChange={(e) => updateCharacter(char.id, 'name', e.target.value)}
+                  >
+                    <option value="">选择角色 Select...</option>
+                    {CHARACTER_GROUPS.map((group) => (
+                      <optgroup key={group.group} label={group.group}>
+                        {group.members.map((member) => (
+                          <option key={member} value={member}>{member}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                )}
+              </div>
+              
+              <button 
+                className={`icon-btn ${char.isCustom ? 'active' : ''}`}
+                onClick={() => updateCharacter(char.id, 'isCustom', !char.isCustom)}
+                title="切换自定义输入 / Toggle Custom Input"
+              >
+                {char.isCustom ? '✏️' : '📋'}
+              </button>
+
+              {characters.length > 2 && (
+                <button 
+                  className="icon-btn" 
+                  style={{color: '#e53e3e', borderColor: '#feb2b2'}}
+                  onClick={() => removeCharacter(char.id)}
+                  title="Remove"
+                >
+                  🗑️
+                </button>
+              )}
+            </div>
+          ))}
         </div>
 
-        <label>文风 (Style)</label>
+        <div className="char-actions">
+          <button className="text-btn" onClick={addCharacter}>
+            ➕ 添加角色 (Add)
+          </button>
+          <button className="text-btn" onClick={handleRandomize}>
+            🎲 随机配置 (Random)
+          </button>
+        </div>
+
+        <div className="section-label">嗑学风味 (Flavor)</div>
         <div className="style-grid">
           {STYLES.map((style) => (
             <div
@@ -397,40 +652,77 @@ const App = () => {
               className={`style-tag ${selectedStyle === style ? "selected" : ""}`}
               onClick={() => setSelectedStyle(style)}
             >
-              {style}
+              {style.split(' ')[0]}
             </div>
           ))}
         </div>
 
-        <div className="col" style={{ marginBottom: "20px" }}>
-          <label>设定 / 梗 (Setting/Prompt)</label>
-          <textarea
-            rows={3}
+        <div className="section-label">粮仓储备 (Length)</div>
+        <div className="length-selector">
+          {WORD_COUNTS.map((count) => (
+            <div 
+              key={count}
+              className={`length-option ${targetWordCount === count ? 'selected' : ''}`}
+              onClick={() => setTargetWordCount(count)}
+            >
+              {count}字
+            </div>
+          ))}
+        </div>
+
+        <div className="section-label">梗 / 设定 (Prompt - Optional)</div>
+        <textarea
+            rows={2}
             value={setting}
             onChange={(e) => setSetting(e.target.value)}
-            placeholder="例如：通宵改论文时的一杯咖啡... / e.g. Late night thesis revision..."
-          />
-        </div>
+            placeholder="例如：在312因为一个bug吵起来了... / e.g. Arguing over a bug in 312..."
+            style={{marginBottom: '20px'}}
+        />
 
         <button 
           className="generate-btn" 
           onClick={generateStory} 
           disabled={isGenerating}
         >
-          {isGenerating ? "正在创作中... / Writing..." : "✨ 生成南高312故事 (Generate)"}
+          {isGenerating ? (
+            <>
+              <span className="spinner">✨</span> 正在产粮中...
+            </>
+          ) : "🖋️ 开始产粮 (Generate)"}
         </button>
       </div>
 
       <div className="output-section">
+        {story && (
+          <div className="toolbar">
+             <button className="tool-btn" onClick={handleShare}>
+              📤 分享 Share
+            </button>
+            <button className="tool-btn primary" onClick={handleCopy}>
+              📋 {copyStatus}
+            </button>
+          </div>
+        )}
+        
         <div className="output-paper" ref={outputRef}>
           {story ? (
             <div className="story-content">{story}</div>
           ) : (
             <div className="placeholder">
-              {isGenerating ? "键盘敲击声渐起..." : "请选择两位课题组同门，开始嗑CP..."}
+              {isGenerating ? (
+                <div>
+                   <p>AI 正在检索人物性格...</p>
+                   <p>正在构思南高312的场景...</p>
+                </div>
+              ) : "请选择同门（支持多人、自定义），点击生成..."}
             </div>
           )}
         </div>
+      </div>
+
+      <div className="footer">
+        ⚠️ 本故事由 AI 生成，纯属虚构，请勿上升蒸煮。<br/>
+        Made for SEU Industrial Design Lab
       </div>
     </div>
   );
