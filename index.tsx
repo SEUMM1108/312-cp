@@ -1,9 +1,13 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 
-// Initialize Gemini API
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Initialize Qwen API (via Alibaba DashScope)
+const client = new OpenAI({
+    apiKey: process.env.DASHSCOPE_API_KEY, // 记得去Vercel后台把变量名改成这个，或者改代码里的名字
+    baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", // 阿里云的专属地址
+    dangerouslyAllowBrowser: true // 允许在浏览器前端直接运行
+});
 
 const STYLES = [
   "甜宠 (Sweet/Fluff)",
@@ -116,20 +120,22 @@ const App = () => {
 【文风】：${selectedStyle}
 【设定/背景】：${setting || "自由发挥，但要基于南高312的科研生活日常"}
 `;
-
-      const responseStream = await ai.models.generateContentStream({
-        model: "gemini-3-pro-preview", 
-        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-        config: {
-          systemInstruction: systemInstruction,
-          temperature: 0.85, 
-        },
+      // 1. 发起请求
+      const stream = await client.chat.completions.create({
+        model: "qwen-plus", // 模型名称：qwen-plus (性价比高) 或 qwen-max (效果最好)
+        messages: [
+          { role: "system", content: systemInstruction }, // 把之前的 systemInstruction 放这里
+          { role: "user", content: userPrompt }           // 把用户的输入放这里
+        ],
+        stream: true,     // 开启打字机流式效果
+        temperature: 0.85 // 创意程度
       });
 
-      for await (const chunk of responseStream) {
-        const text = chunk.text;
-        if (text) {
-          setStory((prev) => prev + text);
+      // 2. 处理流式返回 (格式和Google不一样，所以要改)
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || "";
+        if (content) {
+          setStory((prev) => prev + content);
         }
       }
     } catch (error) {
