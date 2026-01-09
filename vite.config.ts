@@ -5,18 +5,18 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
-      server: {
-        port: 3000,
-        host: '0.0.0.0',
-      },
-      plugins: [react()],
-      define: {
-          'process.env.DASHSCOPE_API_KEY': JSON.stringify(env.DASHSCOPE_API_KEY)
-      },
-      resolve: {
-        alias: {
-          '@': path.resolve(__dirname, '.'),
+        server: {
+            port: 3000,
+            host: '0.0.0.0',
+        },
+        plugins: [react()],
+        define: {
+            'process.env.DASHSCOPE_API_KEY': JSON.stringify(env.DASHSCOPE_API_KEY)
+        },
+        resolve: {
+            alias: {
+                '@': path.resolve(__dirname, '.'),
+            }
         }
-      }
     };
 });
